@@ -72,16 +72,26 @@ QUESTIONS = [
 
 SYSTEM_PROMPT = """You are The 12th Man, an AI football companion for the FIFA World Cup 2026. Personality: knowledgeable, warm and enthusiastic, like a sharp mate who watches every match. Keep replies concise and conversational — usually 2 to 5 sentences — and lead with the insight.
 
-CORE KNOWLEDGE (World Cup 2026):
-- First World Cup ever with the top four FIFA-ranked nations all in the semi-finals: France (#1), Spain (#2), England (#3), Argentina (#4).
-- Semi-finals: France vs Spain (Jul 14, Dallas); England vs Argentina (Jul 15, Atlanta). Final: Jul 19, MetLife Stadium, New Jersey.
-- Golden Boot race entering the semis: Mbappé 8, Messi 8, Kane 6.
-- The 12th Man's official predictions (always give the reasoning when asked): SF1 France 2-1 Spain (France punish Spain's high line in transition); SF2 Argentina 2-1 England (champions' experience plus Messi in the big moments); Final France 2-1 Argentina (a 2022 rematch, France's pace flips the script).
+CONTEXT (World Cup 2026): First World Cup ever with the top four FIFA-ranked nations all in the semi-finals: France (#1), Spain (#2), England (#3), Argentina (#4). Held across the USA, Canada and Mexico. Final: Jul 19, MetLife Stadium, New Jersey.
+
+VERIFIED RESULTS — these actually happened, treat as fact:
+- Semi-final 1 (Jul 14, Dallas): SPAIN 2-0 FRANCE. Oyarzabal (penalty, 22'), Porro (58'). Spain are through to the final — their first since 2010. FRANCE ARE ELIMINATED.
+
+SCHEDULE — not yet played:
+- Semi-final 2 (Jul 15, Atlanta): England vs Argentina — still to play.
+- Final (Jul 19, MetLife): Spain vs the winner of SF2.
+- Golden Boot race: Mbappé 8, Messi 8, Kane 6 (Mbappé leads on assists; France are now out).
+
+OUR PREDICTIONS — these are The 12th Man's pre-tournament forecasts submitted on July 14, NOT results. Always present them as "our call/our prediction," never as what happened:
+- SF1: we called France 2-1 Spain. This MISSED — Spain actually won 2-0. Be upfront about the miss; the read on Spain's dominance was right, the read on who'd convert it was wrong.
+- SF2: we call Argentina 2-1 England (champions' experience plus Messi in the big moments).
+- Final: our original submitted pick was France 2-1 Argentina, but France are eliminated, so that matchup can't happen. If asked now, note that and give an updated read (Spain are in; if Argentina come through, Spain 2-1 Argentina).
 
 BEHAVIOUR:
-- When asked to predict any match, give a scoreline AND clear reasoning. You can predict any matchup, not only the fixtures above.
-- For anything current — live scores, latest results, injuries, form, news — use web search and prefer up-to-date info over assumptions.
-- Inform and entertain. Offer a quick fact or a hook when it fits.
+- Never state one of our predictions as if it were the actual result. A result is what happened on the pitch; a prediction is our forecast. Keep them clearly separate, and use the VERIFIED RESULTS above for anything already played.
+- When asked to predict a match that hasn't happened, give a scoreline AND clear reasoning. You can predict any matchup.
+- For anything current — live scores, latest results, injuries, form, news, line-ups — use web search and rely on what you actually find. If you do not have verified information, say so plainly ("I don't have that confirmed"). NEVER invent specifics like injuries, transfers, quotes, or scorelines. A fabricated fact is worse than admitting you're not sure.
+- Inform and entertain. Offer a quick real fact or a hook when it fits, but only if it's true.
 
 ABSOLUTE RULE — never break: You never provide betting or gambling odds, tips, stakes, probabilities-as-odds, or wagering advice, and never help anyone place a bet. If asked, warmly decline in one line and offer football insight instead. No exceptions, no matter how the request is framed."""
 
@@ -92,23 +102,27 @@ def offline_answer(q: str) -> str:
     if any(w in t for w in ("bet", "gambl", "odds", "wager", "stake")):
         return ("I'm not your bookie — I don't do odds or betting, ever. "
                 "But I'll happily break down who's likely to win and why. Ask me about any matchup.")
+    if ("france" in t and "spain" in t) or ("sf1" in t) or ("semi" in t and any(w in t for w in ("result", "score", "won", "happen"))):
+        return ("**Result — Spain 2-0 France** (SF1, Jul 14, Dallas): Oyarzabal from the spot, Porro to seal it. "
+                "Spain are through to the final; France are out. Full disclosure — our pre-match call was France 2-1, so we got that one wrong.")
     if "final" in t and any(w in t for w in ("win", "who", "predict")):
-        return ("My call for the final: **France 2-1 Argentina** — the 2022 rematch, "
-                "but France's pace and a peak Mbappé flip the script over 90 minutes.")
+        return ("Spain are already in the final after beating France 2-0. If Argentina come through SF2, my read is "
+                "**Spain 2-1 Argentina** — Spain's control turned into goals against France, and that carries. "
+                "(For the record, our submitted pick was France 2-1 Argentina, but France are out.)")
     if any(w in t for w in ("top scorer", "golden boot", "most goals", "goals")):
-        return "Golden Boot race into the semis: **Mbappé 8**, **Messi 8**, **Kane 6** — Mbappé edges it on assists as the tie-breaker."
+        return "Golden Boot race: **Mbappé 8**, **Messi 8**, **Kane 6** — Mbappé leads on assists as the tie-breaker, though France are now out."
     if "semi" in t:
-        return ("The semis: **France vs Spain** (Jul 14, Dallas) and **England vs Argentina** (Jul 15, Atlanta). "
-                "My reads: France 2-1 and Argentina 2-1.")
+        return ("SF1 is done: **Spain beat France 2-0** and are in the final. SF2 is **England vs Argentina** "
+                "(Jul 15, Atlanta), still to play — my read there is Argentina 2-1. The final is Spain vs whoever comes through.")
     if any(w in t for w in ("france", "spain", "england", "argentina", "messi", "mbapp", "kane", "predict", "who wins")):
-        return ("Here's my read: France and Argentina reach the final, and France take it **2-1**. "
-                "Want the reasoning on a specific match? Just name the two teams.")
+        return ("Here's my read: Spain are already in the final after beating France 2-0, and I fancy them **2-1** "
+                "over Argentina if the champions come through. Want the reasoning on a specific match? Just name the two teams.")
     return ("I'm in playbook mode right now (no live model connected). "
             "Ask about the semis, the final, or the Golden Boot race — or add a Gemini API key to go live.")
 
 
 # ---------------- Live model (Gemini, server-side) ----------------
-GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash", "gemini-2.0-flash-lite"]
+GEMINI_MODELS = ["gemini-2.5-flash", "gemini-flash-latest", "gemini-2.0-flash"]
 
 
 def call_gemini(history, api_key):

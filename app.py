@@ -50,6 +50,7 @@ def init_state():
     ss.setdefault("quiz_choice", None)
     ss.setdefault("quiz_started", False)
     ss.setdefault("sim_results", None)
+    ss.setdefault("wi_take", None)         # What-If Lab AI narration
     ss.setdefault("user_key", "")
 
 
@@ -91,7 +92,7 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-tabs = st.tabs(["💬 Ask", "📋 Insights", "🎯 Predictions", "⚔️ Head-to-Head",
+tabs = st.tabs(["💬 Ask", "📋 Insights", "🎯 Predictions", "🔮 What-If Lab", "⚔️ Head-to-Head",
                 "🎲 Simulator", "🧤 Beat the Keeper", "🧠 Trivia"])
 
 
@@ -186,8 +187,108 @@ with tabs[2]:
     st.caption("These are the exact picks submitted on July 14 — the app and the official submission always agree.")
 
 
-# ================= 4. HEAD-TO-HEAD =================
+# ================= 4. WHAT-IF LAB =================
 with tabs[3]:
+    st.subheader("🔮 The What-If Lab")
+    st.caption("Predictions aren't fixed — games turn on moments. Change the conditions and watch the model "
+               "rethink the match in real time, then tell you why. A forecast you can poke at, not a number set in stone.")
+
+    wc1, wc2, wc3 = st.columns([2, 1, 2])
+    wa = wc1.selectbox("Team", list(E.POWER), index=0, key="wi_a")
+    wc2.markdown("<div style='text-align:center;font-size:1.6rem;font-weight:800;margin-top:26px'>VS</div>",
+                 unsafe_allow_html=True)
+    wb = wc3.selectbox("Opponent", list(E.POWER), index=1, key="wi_b")
+
+    if wa == wb:
+        st.info("Pick two different teams to run a scenario.")
+    else:
+        star_a, star_b = E.STARS[wa][0], E.STARS[wb][0]
+        st.markdown("##### Set the scene")
+        s1, s2 = st.columns(2)
+        out_a = s1.checkbox(f"🚑 {star_a} ruled out — {wa}", key="wi_oa")
+        out_b = s2.checkbox(f"🚑 {star_b} ruled out — {wb}", key="wi_ob")
+        red = st.radio("🟥 Red card", ["None", f"{wa} down to 10", f"{wb} down to 10"],
+                       horizontal=True, key="wi_red")
+        cc1, cc2 = st.columns(2)
+        rain = cc1.toggle("🌧️ Heavy rain", key="wi_rain")
+        crowd = cc2.radio("📣 Crowd", ["Neutral", f"Backing {wa}", f"Backing {wb}"],
+                          horizontal=True, key="wi_crowd")
+
+        red_code = "a" if red == f"{wa} down to 10" else ("b" if red == f"{wb} down to 10" else None)
+        crowd_code = "a" if crowd == f"Backing {wa}" else ("b" if crowd == f"Backing {wb}" else None)
+
+        base = E.whatif_sim(wa, wb)
+        mod = E.whatif_sim(wa, wb, star_out_a=out_a, star_out_b=out_b,
+                           red_card=red_code, rain=rain, crowd=crowd_code)
+
+        levers = []
+        if out_a:
+            levers.append(f"{star_a} out")
+        if out_b:
+            levers.append(f"{star_b} out")
+        if red_code == "a":
+            levers.append(f"{wa} down to ten")
+        if red_code == "b":
+            levers.append(f"{wb} down to ten")
+        if rain:
+            levers.append("heavy rain")
+        if crowd_code == "a":
+            levers.append(f"a crowd behind {wa}")
+        if crowd_code == "b":
+            levers.append(f"a crowd behind {wb}")
+
+        st.divider()
+        fav = wa if mod["a_win"] >= 50 else wb
+        st.markdown(f"### 🔮 **{fav}** — {max(mod['a_win'], mod['b_win']):.0f}%")
+
+        for team, now, was, tcol in [(wa, mod["a_win"], base["a_win"], E.TEAM_COLOR[wa]),
+                                     (wb, mod["b_win"], base["b_win"], E.TEAM_COLOR[wb])]:
+            delta = now - was
+            if delta > 0.5:
+                arrow = f"<span style='color:{GOLD}'>▲ {delta:.0f}</span>"
+            elif delta < -0.5:
+                arrow = f"<span style='color:{RED}'>▼ {abs(delta):.0f}</span>"
+            else:
+                arrow = f"<span style='color:{DIM}'>—</span>"
+            k1, k2, k3 = st.columns([2, 6, 2])
+            k1.markdown(f"**{team}**")
+            k2.markdown(f"<div class='tm-bar' style='height:20px;margin-top:6px'><div style='width:{now:.0f}%;"
+                        f"background:{tcol}'></div></div>", unsafe_allow_html=True)
+            k3.markdown(f"<div style='text-align:right'><b>{now:.0f}%</b>&nbsp; {arrow}</div>",
+                        unsafe_allow_html=True)
+
+        st.caption(f"Most likely score **{wa} {mod['score']} {wb}** · level after 90 in "
+                   f"**{mod['draw90']:.0f}%** of runs (settled on penalties) · neutral baseline: "
+                   f"{wa} {base['a_win']:.0f}% – {base['b_win']:.0f}% {wb}.")
+
+        st.info(E.whatif_story(wa, wb, base, mod, levers))
+
+        if st.button("🎙️ Get The 12th Man's read on this scenario", use_container_width=True):
+            key = get_api_key()
+            with st.spinner("Reading the game…"):
+                scen = E._join(levers) if levers else "no changes (a neutral match)"
+                q = (f"What-if scenario for {wa} vs {wb}: {scen}. The model now makes it "
+                     f"{wa} {mod['a_win']:.0f}% vs {wb} {mod['b_win']:.0f}%, most likely {wa} {mod['score']} {wb}, "
+                     f"level after 90 in {mod['draw90']:.0f}% of games (neutral baseline was "
+                     f"{wa} {base['a_win']:.0f}% vs {wb} {base['b_win']:.0f}%). In 3-4 sentences, as The 12th Man, "
+                     f"explain why these conditions shift the game. Insight only, no betting.")
+                if key:
+                    text, err = E.call_gemini([{"role": "user", "content": q}], key)
+                    if text is None:
+                        text = E.whatif_story(wa, wb, base, mod, levers)
+                else:
+                    text = E.whatif_story(wa, wb, base, mod, levers)
+                st.session_state.wi_take = text
+        if st.session_state.wi_take:
+            with st.chat_message("assistant", avatar="⚽"):
+                st.markdown(st.session_state.wi_take)
+
+        st.caption("A model you can interrogate — the reasoning behind the call, responsive to the game's "
+                   "conditions. Insight, never odds.")
+
+
+# ================= 5. HEAD-TO-HEAD =================
+with tabs[4]:
     st.subheader("Head-to-Head Lab")
     st.caption("Pick any two of the four. The model weighs them stat by stat, then calls the game — reasoning included.")
     c1, c2, c3 = st.columns([2, 1, 2])
@@ -229,8 +330,8 @@ with tabs[3]:
         st.caption("Model output, not odds — a read on the matchup, nothing to bet on.")
 
 
-# ================= 5. SIMULATOR =================
-with tabs[4]:
+# ================= 6. SIMULATOR =================
+with tabs[5]:
     st.subheader("The Simulator")
     st.caption("The reasoning behind the calls, quantified. We run the rest of the tournament "
                "ten thousand times — and let the numbers argue with the heart.")
@@ -282,8 +383,8 @@ with tabs[4]:
         st.caption("A model for insight, not a bookmaker — probabilities to understand the race, never odds to bet on.")
 
 
-# ================= 6. BEAT THE KEEPER =================
-with tabs[5]:
+# ================= 7. BEAT THE KEEPER =================
+with tabs[6]:
     st.subheader("Beat the Keeper")
     st.caption("Five penalties against an AI keeper that studies your habits. "
                "The more you shoot, the better it reads you.")
@@ -337,8 +438,8 @@ with tabs[5]:
         st.caption("The keeper has no file on you yet. It learns from every shot.")
 
 
-# ================= 7. TRIVIA =================
-with tabs[6]:
+# ================= 8. TRIVIA =================
+with tabs[7]:
     st.subheader("The 12th Man Test")
     st.caption("Ten questions on the World Cup, past and present. The twelfth man always knows their stuff.")
 

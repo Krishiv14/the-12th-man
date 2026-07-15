@@ -220,6 +220,94 @@ def h2h_edges(a, b):
     return edge_a, edge_b
 
 
+# ---------------- What-If scenario engine ----------------
+# Each team's talisman and how many "power points" losing them costs.
+STARS = {"France": ("Mbappé", 8), "Spain": ("Yamal", 5),
+         "England": ("Kane", 5), "Argentina": ("Messi", 7)}
+
+
+def _join(items):
+    items = list(items)
+    if not items:
+        return ""
+    if len(items) == 1:
+        return items[0]
+    if len(items) == 2:
+        return f"{items[0]} and {items[1]}"
+    return ", ".join(items[:-1]) + f", and {items[-1]}"
+
+
+def whatif_sim(a, b, star_out_a=False, star_out_b=False, red_card=None,
+               rain=False, crowd=None, n=20_000):
+    """Recompute a matchup under scenario toggles.
+    red_card / crowd: None | 'a' | 'b'.  Draws after 90 are settled on penalties
+    using each side's big-game nous. a_win + b_win always sum to 100."""
+    eff_a, eff_b = POWER[a], POWER[b]
+    if star_out_a:
+        eff_a -= STARS[a][1]
+    if star_out_b:
+        eff_b -= STARS[b][1]
+    if red_card == "a":
+        eff_a -= 9
+    elif red_card == "b":
+        eff_b -= 9
+    if crowd == "a":
+        eff_a += 2
+    elif crowd == "b":
+        eff_b += 2
+
+    d = eff_a - eff_b
+    rain_g = 0.82 if rain else 1.0     # rain lowers goals
+    gap = 0.6 if rain else 1.0         # ...and compresses the quality gap
+    la = 1.4 * rain_g * math.exp((d * gap) / 25)
+    lb = 1.4 * rain_g * math.exp((-d * gap) / 25)
+
+    na, nb = STATS[a]["Big-game nous"], STATS[b]["Big-game nous"]
+    pen_a = na / (na + nb)
+
+    wa = wb = draw = 0
+    scores = {}
+    for _ in range(n):
+        ga = min(poisson(la), 7)
+        gb = min(poisson(lb), 7)
+        scores[(ga, gb)] = scores.get((ga, gb), 0) + 1
+        if ga > gb:
+            wa += 1
+        elif gb > ga:
+            wb += 1
+        else:
+            draw += 1
+            if random.random() < pen_a:
+                wa += 1
+            else:
+                wb += 1
+    (ga, gb), _c = max(scores.items(), key=lambda kv: kv[1])
+    return {"a_win": wa / n * 100, "b_win": wb / n * 100,
+            "draw90": draw / n * 100, "score": f"{ga}–{gb}",
+            "eff_a": eff_a, "eff_b": eff_b}
+
+
+def whatif_story(a, b, base, mod, levers):
+    """Deterministic 'why the number moved' narrative for a scenario."""
+    fav = a if mod["a_win"] >= 50 else b
+    fav_pct = mod["a_win"] if fav == a else mod["b_win"]
+    if not levers:
+        return (f"No changes yet — a straight **{a} v {b}**. The model leans **{fav}** at "
+                f"**{fav_pct:.0f}%**. Flip a switch above and watch it rethink the game in real time.")
+    base_fav = a if base["a_win"] >= 50 else b
+    swing = mod["a_win"] - base["a_win"]
+    flipped = fav != base_fav and abs(base["a_win"] - 50) > 3 and abs(mod["a_win"] - 50) > 3
+    bits = [f"Factor in {_join(levers)}, and the model swings **{a}** "
+            f"{'up' if swing >= 0 else 'down'} **{abs(swing):.0f} points** — "
+            f"it now backs **{fav}** at **{fav_pct:.0f}%**."]
+    if flipped:
+        bits.append(f"That's enough to **flip the favourite**: **{base_fav}** had the edge before you touched anything.")
+    if mod["draw90"] >= 30:
+        bits.append(f"It also tightens the game — level after 90 in **{mod['draw90']:.0f}%** of runs, "
+                    f"so penalties loom, and there the steelier temperament edges through.")
+    return " ".join(bits)
+
+
 # ---------------- Adaptive keeper ----------------
 ZONES = ["Left", "Centre", "Right"]
 
